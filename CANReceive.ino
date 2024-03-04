@@ -4,12 +4,6 @@ void setup() {
 
 //setting to pins D21 and D22 on ESP32 to match pinlayout SN65HVD235D chip
   CAN.setPins(22, 21);
-  
-  Serial.begin(9600);
-  while (!Serial);
-
-  Serial.println("CAN Receiver");
-
   // start the CAN bus at 500 kbps
   if (!CAN.begin(500E3)) {
     Serial.println("Starting CAN failed!");
@@ -18,42 +12,39 @@ void setup() {
 }
 
 void loop() {
-  // try to parse packet
+  static unsigned long lastSendTime = 0;
+  const long sendInterval = 500; // Send sensor data every 0.5 seconds
+
+  // Try to parse a packet
   int packetSize = CAN.parsePacket();
 
-  //only start receiving date if both packetsize and ID is valid ( 1< )
-  if (packetSize || CAN.packetId() != -1) {
-    
-    // received a packet
-    Serial.print("Received ");
-
-    if (CAN.packetExtended()) {
-      Serial.print("extended ");
+  // Only proceed if a packet was received
+  if (packetSize > 0) {
+    String receivedMsg = "";
+    while (CAN.available()) {
+      receivedMsg += (char)CAN.read(); // no it can't read hehe
     }
 
-    if (CAN.packetRtr()) {
-      // Remote transmission request, packet contains no data
-      Serial.print("RTR ");
-    }
-
-    Serial.print("packet with id 0x");
-    Serial.print(CAN.packetId(), HEX);
-
-    if (CAN.packetRtr()) {
-      Serial.print(" and requested length ");
-      Serial.println(CAN.packetDlc());
+    if (receivedMsg == "KILL") {
+      Serial.println("Kill command received. Shutting down.");
+      esp_deep_sleep_start(); // Shut down the device
     } else {
-      Serial.print(" and length ");
-      Serial.println(packetSize);
-
-      // only print packet data for non-RTR packets
-      while (CAN.available()) {
-        Serial.print(CAN.read());
-      }
-      Serial.println();
+      Serial.println("Received message: " + receivedMsg);
     }
-
-    Serial.println();
   }
-  delay(1000);
+
+  // Send sensor data at regular intervals
+  if (millis() - lastSendTime > sendInterval) {
+    // Read sensor value 
+    int sensorValue = analogRead(pin here);
+    
+    // Prepare the sensor data message
+    String message = String(sensorValue);
+    CAN.beginPacket(0x01); // Use an appropriate ID for your sensor data packet
+    CAN.write((const uint8_t*)message.c_str(), message.length());
+    CAN.endPacket();
+
+    Serial.println("Sensor data sent: " + message);
+    lastSendTime = millis();
+  }
 }
