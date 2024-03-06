@@ -1,5 +1,5 @@
 #include <Arduino.h>
-
+#include <Servo.h>
 #include <WB_Canbus.h>
 
 bool sent = false;
@@ -19,12 +19,23 @@ void loop() {
   if (Serial.available()) {
     String serialData = Serial.readStringUntil('\n');
 
-    if (serialData.length() > 2 && serialData.charAt(1) == '|') {
-      char deviceId = serialData.charAt(0);
-      String action = serialData.substring(2);
-      
+    if (serialData.length() > 2 && serialData.charAt(1) == '|') { // receiving a mesasge in a form of '1|3 64.32' where 1 is the destination esp
+      int separatorPos = incomingSerial.indexOf('|');             // 3 is the servo number attached to that esp and 64.32 is the angle
+      int spacePos = incomingSerial.indexOf(' ');
+
+      if (separatorPos != -1 && spacePos != -1) {
+        int deviceId = incomingSerial.substring(0, separatorPos).toInt(); // read the device id 
+        int servoNumber = incomingSerial.substring(separatorPos + 1, spacePos).toInt(); // read servo
+        float angle = incomingSerial.substring(spacePos + 1).toFloat(); // read angle
+
+        Serial.print("Device ID: ");
+        Serial.println(deviceId);
+        Serial.print("Servo Number: ");
+        Serial.println(servoNumber);
+        Serial.print("Angle: ");
+        Serial.println(angle);
       // Handling the kill switch command
-      if (action.equals("KILL")) {
+      else {
         char killMsg[] = "KILL";
         send_canbus(0, 0xFF, strlen(killMsg), (byte*)killMsg); // Broadcast KILL command
         Serial.println("Kill signal sent to all devices.");
@@ -55,6 +66,7 @@ void loop() {
 
     
 //#TODO Add some basic commands, finalize send/receive functions, test running time, collisions, sensor every 0.5s????
+//#TODO Do the cleanup after everything is finished
 
           
 
@@ -63,8 +75,15 @@ void loop() {
       // Assuming deviceId maps to the 'to' field in CAN packet and using a fixed priority and sequence for simplicity
       
       //byte priority, byte to, byte payload_size, byte* payload
-      uint16_t canId = charToDeviceCANID(deviceChar);
-      send_canbus(0, canId, msgsize, (byte*)msg); // Send the CAN message
+      uint16_t canId = charToDeviceCANID(deviceId);
+      // Assuming the angle can be sent as a two-byte integer for simplicity
+      int angleInt = static_cast<int>(angle * 100); // Convert angle to an integer
+      
+      byte payload[3];
+      payload[0] = servoNumber;
+      payload[1] = (angleInt >> 8) & 0xFF; // High byte of angle
+      payload[2] = angleInt & 0xFF; // Low byte of angle
+      send_canbus(0, canId, 3, payload); // Send the CAN message
       Serial.println("Serial data converted to CAN message and sent successfully");
      else {
       Serial.println("Invalid serial data format");
